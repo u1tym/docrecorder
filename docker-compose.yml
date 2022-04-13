@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+
+  recorder:
+    build: ./recorder
+    image: ubuntu-recorder
+    container_name: myrecorder
+    restart: always
+    environment:
+      LUID: ${LOCAL_UID}
+      LGID: ${LOCAL_GID}
+    volumes:
+      - ./recorder/data:/home/recusr/data
+      - ./recorder/log:/home/recusr/log
+
