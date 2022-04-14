@@ -223,20 +223,20 @@ def wake_child(title, channel, dtm_st, minute):
     global g_lg;
     g_lg = log.LOG("log", "logfile-" + dtm_st.strftime('%Y%m%d_%H%M%S'))
 
+    # ファイル名、シェル名
     filename = channel + "_" + title + "_" + dtm_st.strftime('%Y%m%d_%H%M%S') + ".mp3"
+    shell_name = "rec_radiko.sh"
+
     if channel == "agp":
+        shell_name = "rec_agp.sh"
         filename = channel + "_" + title + "_" + dtm_st.strftime('%Y%m%d_%H%M%S') + ".mp4"
+
     g_lg.output("dbg", "ファイル名=[" + filename + "]")
 
-    command = "./rec_radiko.sh" \
+    command = "./" + shell_name \
             + " " + channel \
-            + " " + str(minute) \
+            + " " + str(minute * 60) \
             + " " + filename
-    if channel == "agp":
-        command = "./rec_agp.sh" \
-                + " " + channel \
-                + " " + str(minute) \
-                + " " + filename
 
     g_lg.output("dbg", "コマンド=[" + command + "]")
 

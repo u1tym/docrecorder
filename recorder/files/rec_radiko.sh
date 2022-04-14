@@ -3,7 +3,7 @@
 if [ $# -lt 3 ] ; then
 	printf "Usage: rec_radiko.sh channel time(min) output\n"
 	printf "  channel : チャンネルの文字列\n"
-	printf "  time    : 録画時間(分)\n"
+	printf "  time    : 録画時間(秒)\n"
 	printf "  output  : 出力ファイル名(～.mp3)\n"
 	printf "dataフォルダ下に出力する。\n"
 	exit 1
@@ -33,7 +33,7 @@ fi
 
 if [ $# -ge 2 ]; then
   channel=$1
-  DURATION=`expr $2 \* 60`
+  DURATION=${2}
 fi
 
 ####
