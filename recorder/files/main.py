@@ -54,7 +54,7 @@ def main():
         #------------------------#
         # 処理情報テーブルの更新 #
         #------------------------#
-        read_config(d_tbl)
+        read_config(d_tbl, p_tbl)
 
         #------------------#
         # 処理起動チェック #
@@ -71,10 +71,21 @@ def main():
             # 次開始時刻を過ぎているものは、処理対象
             if one_rec['next_start'].strftime('%Y%m%d_%H%M%S') <= n.strftime('%Y%m%d_%H%M%S'):
 
+                # 既に録音中の場合は、警告を通知して、プロセス情報を退避
+                if one_rec['process'] is not None:
+                    g_lg.output("WRN", "録音時刻到達時に、前回の録音プロセスが未終了") 
+
+                    p_tbl.append(one_rec['process'])
+                    one_rec['process'] = None
+
+
                 # 処理起動
-                record_start(p_tbl,
+                p = record_start(
                         one_rec['title'], one_rec['channel'],
                         one_rec['next_start'], one_rec['order_minute'] + 4)
+
+                one_rec['process'] = p
+                g_lg.output("INF", "録画(音)用プロセスを起動 " + str(p))
 
                 # 次開始時刻を更新
                 nxt_st = get_next_start(one_rec['order_day'], one_rec['order_time'])
@@ -84,9 +95,25 @@ def main():
 
 #            print(one_rec)
 
+
         #----------------------# 
         # プロセス終了チェック #
         #----------------------# 
+        for one_rec in d_tbl:
+            if one_rec['process'] is None:
+                # プロセスが未起動
+                continue
+
+            one_p = one_rec['process']
+            if one_p.is_alive():
+                # プロセスが継続して起動中
+                continue
+
+            # プロセス終了を検知
+            g_lg.output("INF", "プロセス終了を検知 p=" + str(one_p))
+            one_p.join()
+            one_rec['process'] = None
+
         for one_p in p_tbl:
 
             if not one_p.is_alive():
@@ -100,7 +127,7 @@ def main():
     return()
 
 
-def read_config(d_tbl):
+def read_config(d_tbl, p_tbl):
 
     ## g_lg.output("dbg", "設定ファイル読み込み")
 
@@ -132,6 +159,7 @@ def read_config(d_tbl):
 
             add_rec = {}
             add_rec['filename'] = filename
+            add_rec['process'] = None
             d_tbl.append(add_rec)
 
             idx = len(d_tbl) - 1
@@ -168,7 +196,15 @@ def read_config(d_tbl):
     chk_list = [one_d.get('checked') for one_d in d_tbl]
     del_list = [i for i, x in enumerate(chk_list) if x == False]
 
+    # 削除対象のものを削除
     for idx in reversed(del_list):
+
+        # 削除対象レコードのプロセスが稼働中の場合
+        if d_tbl[idx]['process'] is not None:
+            # 退避
+            p_tbl.append(d_tbl[idx]['process'])
+
+        # 削除
         del_d = d_tbl.pop(idx)
 
         g_lg.output("INF", "削除 " + str(del_d))
@@ -207,16 +243,14 @@ def get_next_start(order_week, order_hhmm):
     return ret_val
 
 
-def record_start(p_tbl, title, channel, dtm_st, minute):
+def record_start(title, channel, dtm_st, minute):
 
     p = Process(target=wake_child,
             args=(title, channel, dtm_st, minute,))
     p.daemon = True
     p.start()
 
-    p_tbl.append(p)
-
-    return
+    return p
 
 def wake_child(title, channel, dtm_st, minute):
 
