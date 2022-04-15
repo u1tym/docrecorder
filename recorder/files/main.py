@@ -86,6 +86,7 @@ def main():
                 one_rec['process'] = None
                 one_rec['process_st'] = None
                 one_rec['process_ed'] = None
+                one_rec['process_wake'] = 0
 
 
             # 処理起動
@@ -101,6 +102,7 @@ def main():
             one_rec['process'] = p
             one_rec['process_st'] = epo_st
             one_rec['process_ed'] = epo_ed
+            one_rec['process_wake'] += 1
             g_lg.output("INF", "録画(音)用プロセスを起動 " + str(p))
 
             # 次開始時刻を更新
@@ -130,7 +132,9 @@ def main():
             one_p.join()
             one_rec['process'] = None
 
-            if n.timestamp() < (one_rec['process_ed'] - 60 * 4):
+            if ( n.timestamp() < (one_rec['process_ed'] - 60 * 4)
+                    and one_rec['process_wake'] < 10 ):
+
                 # 終了予定時刻よりも早く終わった場合は、再起動
 
                 # dur の単位は分
@@ -140,11 +144,16 @@ def main():
                         one_rec['title'], one_rec['channel'], n, dur)
 
                 one_rec['process'] = p
+                one_rec['process_wake'] += 1
                 g_lg.output("INF", "録画(音)用プロセスを再起動 " + str(p))
 
             else:
+                if one_rec['process_wake'] >= 10:
+                    g_lg.output("ERR", "再起動回数超過により、再起動抑止")
+
                 one_rec['process_st'] = None
                 one_rec['process_ed'] = None
+                one_rec['process_wake'] = 0
 
         for one_p in p_tbl:
 
@@ -194,6 +203,7 @@ def read_config(d_tbl, p_tbl):
             add_rec['process'] = None
             add_rec['process_st'] = None
             add_rec['process_ed'] = None
+            add_rec['process_wake'] = 0
             d_tbl.append(add_rec)
 
             idx = len(d_tbl) - 1
