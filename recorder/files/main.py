@@ -36,6 +36,7 @@ g_lg = None
 
 def main():
 
+    # ログ出力設定
     global g_lg
     g_lg = log.LOG("log", "logfile")
     g_lg.output("INF", "プロセス起動")
@@ -43,7 +44,7 @@ def main():
     # 処理情報テーブル
     d_tbl = []
 
-    # プロセス情報テーブル
+    # プロセス情報テーブル(あぶれたもの)
     p_tbl = []
 
     #============#
@@ -60,7 +61,7 @@ def main():
         # 処理起動チェック #
         #------------------#
         n = dtm.now()
-        g_lg.output("dbg", "該当情報有無チェック 現時刻=" + str(n))
+        #g_lg.output("dbg", "該当情報有無チェック")
 
         for one_rec in d_tbl:
 
@@ -68,30 +69,45 @@ def main():
             if one_rec['next_start'] is None:
                 continue
 
-            # 次開始時刻を過ぎているものは、処理対象
-            if one_rec['next_start'].strftime('%Y%m%d_%H%M%S') <= n.strftime('%Y%m%d_%H%M%S'):
+            # 次開始時刻に達していないものは、処理対象外
+            if one_rec['next_start'].strftime('%Y%m%d_%H%M%S') > n.strftime('%Y%m%d_%H%M%S'):
+                continue
 
-                # 既に録音中の場合は、警告を通知して、プロセス情報を退避
-                if one_rec['process'] is not None:
-                    g_lg.output("WRN", "録音時刻到達時に、前回の録音プロセスが未終了") 
+            #==================
+            # 録画(音)開始処理
+            #==================
 
-                    p_tbl.append(one_rec['process'])
-                    one_rec['process'] = None
+            # 既に録音中の場合は、警告を通知して、プロセス情報を退避
+            if one_rec['process'] is not None:
+                g_lg.output("WRN", "録音時刻到達時に、前回の録音プロセスが未終了") 
+
+                # プロセス情報を退避場所へ移動
+                p_tbl.append(one_rec['process'])
+                one_rec['process'] = None
+                one_rec['process_st'] = None
+                one_rec['process_ed'] = None
 
 
-                # 処理起動
-                p = record_start(
-                        one_rec['title'], one_rec['channel'],
-                        one_rec['next_start'], one_rec['order_minute'] + 4)
+            # 処理起動
+            p = record_start(
+                    one_rec['title'], one_rec['channel'],
+                    one_rec['next_start'], one_rec['order_minute'] + 4)
 
-                one_rec['process'] = p
-                g_lg.output("INF", "録画(音)用プロセスを起動 " + str(p))
+            # 録音開始日時(epoch秒)
+            epo_st = int(dtm.now().timestamp())
+            # 録音終了日時(epoch秒)
+            epo_ed = epo_st + (one_rec['order_minute'] + 4) * 60
 
-                # 次開始時刻を更新
-                nxt_st = get_next_start(one_rec['order_day'], one_rec['order_time'])
-                one_rec['next_start'] = nxt_st
+            one_rec['process'] = p
+            one_rec['process_st'] = epo_st
+            one_rec['process_ed'] = epo_ed
+            g_lg.output("INF", "録画(音)用プロセスを起動 " + str(p))
 
-                g_lg.output("INF", "NEXT START=" + str(nxt_st))
+            # 次開始時刻を更新
+            nxt_st = get_next_start(one_rec['order_day'], one_rec['order_time'])
+            one_rec['next_start'] = nxt_st
+
+            g_lg.output("INF", "NEXT START=" + str(nxt_st))
 
 #            print(one_rec)
 
@@ -113,6 +129,22 @@ def main():
             g_lg.output("INF", "プロセス終了を検知 p=" + str(one_p))
             one_p.join()
             one_rec['process'] = None
+
+            if n.timestamp() < (one_rec['process_ed'] - 60 * 4):
+                # 終了予定時刻よりも早く終わった場合は、再起動
+
+                # dur の単位は分
+                dur = (int(one_rec['process_ed'] - n.timestamp())) // 60 + 1
+
+                p = record_start(
+                        one_rec['title'], one_rec['channel'], n, dur)
+
+                one_rec['process'] = p
+                g_lg.output("INF", "録画(音)用プロセスを再起動 " + str(p))
+
+            else:
+                one_rec['process_st'] = None
+                one_rec['process_ed'] = None
 
         for one_p in p_tbl:
 
@@ -160,6 +192,8 @@ def read_config(d_tbl, p_tbl):
             add_rec = {}
             add_rec['filename'] = filename
             add_rec['process'] = None
+            add_rec['process_st'] = None
+            add_rec['process_ed'] = None
             d_tbl.append(add_rec)
 
             idx = len(d_tbl) - 1
