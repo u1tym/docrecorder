@@ -1,0 +1,4 @@
+recorder/log/*.log
+recorder/data/rec_*.json
+recorder/data/*.mp3
+recorder/data/*.mp4
