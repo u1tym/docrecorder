@@ -4,7 +4,7 @@ import sys
 import warnings
 
 #------------------------------------------------------------------------------
-# SYSTEM設定
+# SYSTEM共通設定
 #
 # - バイナリコード出力抑止
 # - 実行時警告の出力抑止
@@ -110,6 +110,8 @@ def main():
             one_rec['next_start'] = nxt_st
 
             g_lg.output("INF", "NEXT START=" + str(nxt_st))
+            if nxt_st is None:
+                g_lg.output("WRN", "録画(音)予定が存在しないデータです。")
 
 #            print(one_rec)
 
@@ -181,44 +183,66 @@ def read_config(d_tbl, p_tbl):
     l = list(p.glob("rec_*.json"))
     ## g_lg.output("dbg", "ファイル一覧 " + str(l))
 
+    # 1ファイルずつ処理
     for one_p in l:
 
+        # ファイル名
         filename = str(one_p)
 
+        # ファイルを読み込み
         with open(filename, "r", encoding="utf-8") as fr:
             jsonstr = fr.read()
 
+        # ファイルのチェックサムを算出(変更有無の確認用)
         with open(filename, "rb") as fr:
             checksum = hashlib.sha256(fr.read()).hexdigest()
 
+        # 既読済み情報の中から設定ファイル名をキーに一致するものを検索
         f_list = [one_d.get('filename') for one_d in d_tbl]
         idx = f_list.index(filename) if filename in f_list else None
 
         if idx is None:
+
             # 新規追加
             g_lg.output("INF", "新規追加 " + filename)
 
+            # 情報のガラを作成
             add_rec = {}
             add_rec['filename'] = filename
             add_rec['process'] = None
             add_rec['process_st'] = None
             add_rec['process_ed'] = None
             add_rec['process_wake'] = 0
+
+            # 既読済み情報の末尾に追加
             d_tbl.append(add_rec)
 
+            # 更新位置を設定
             idx = len(d_tbl) - 1
 
         elif d_tbl[idx]['checksum'] != checksum:
+
             # 更新
             g_lg.output("INF", "更新 " + filename)
             nop()
+
         else:
+
             # 更新なし
             ## g_lg.output("dbg", "更新なし " + filename)
             d_tbl[idx]['checked'] = True
             continue
 
-        jsn = json.loads(jsonstr)
+        try:
+            jsn = json.loads(jsonstr)
+        except Exception as e:
+            g_lg.output("err", "設定ファイル異常(JSON解析処理異常) " + filename)
+            jsn = {}
+            jsn['title'] = 'error'
+            jsn['channel'] = 'error'
+            jsn['date'] = 'none'
+            jsn['start'] = 'error'
+            jsn['minute'] = 0;
 
         d_tbl[idx]['checksum'] = checksum
 
@@ -231,6 +255,8 @@ def read_config(d_tbl, p_tbl):
 
         d_tbl[idx]['next_start'] = get_next_start(
                 d_tbl[idx]['order_day'], d_tbl[idx]['order_time'])
+        if d_tbl[idx]['next_start'] is None:
+            g_lg.output("WRN", "録画(音)予定が存在しないデータです。")
 
         d_tbl[idx]['checked'] = True
 
@@ -259,25 +285,73 @@ def read_config(d_tbl, p_tbl):
 def nop():
     return
 
-
+#==============================================================================
+# 次の録画(音)開始日時の取得
+#
+# Parameters
+# order_week : 曜日を表す文字列または、日付
+#              Sun Mon Tue Wed Thu Fri Sat
+#              YYYY/MM/DD
+# order_hhmm : 時刻
+#              hh:mm
+#
+# Output
+# datetime   : 算出結果の日時
+# None       : 該当するものがない
+#
+#==============================================================================
 def get_next_start(order_week, order_hhmm):
 
     ret_val = None
 
+    # 現在日時から125秒後(=以降、現在)以降で算出する
     n = dtm.now() + tmdlt(seconds = 125)
+
+    if len(order_week) == 10:
+
+        # 日付を指定されたものとみなして処理する
+        yy = int(order_week[0:4])
+        mm = int(order_week[5:7])
+        dd = int(order_week[8:11])
+        mi = int(order_hhmm[0:2])
+        ss = int(order_hhmm[3:5])
+
+        tmp_dtm = dtm(yy, mm, dd, mi, ss, 0)
+        if tmp_dtm > n:
+            ret_val = tmp_dtm + tmdlt(minutes = -2)
+
+        return ret_val
+
+    if len(order_week) != 3:
+        return ret_val
+
+    # ここは、週の文字列(=3文字)で指定された場合
 
     if ( (order_week == n.strftime('%a'))
             and (order_hhmm > n.strftime('%H:%M')) ):
+
+        # 指定日の曜日が現在と同じで、
+        # かつ、指定された時刻が、現在よりも未来の場合
+
+        # 現在と同じ日で、開始日時を生成する。
+        # 開始日時の時刻は、指定された時刻の2分前とする
+
         tmp_dtm = dtm(
                 n.year, n.month, n.day,
                 int(order_hhmm[0:2]), int(order_hhmm[3:5]), 0)
         ret_val = tmp_dtm + tmdlt(minutes = -2)
 
     else:
+        # 現在の翌日以降で、曜日が一致する日を走査する。
+
         for add_days in range(1, 7 + 8):
             chk_dtm = n + tmdlt(days = add_days)
             if order_week != chk_dtm.strftime('%a'):
                 continue
+
+            # 曜日が一致した日で、開始日時を生成する。
+            # 開始日時の時刻は、指定された時刻の2分前とする
+
             tmp_dtm = dtm(
                     chk_dtm.year, chk_dtm.month, chk_dtm.day,
                     int(order_hhmm[0:2]), int(order_hhmm[3:5]), 0)
